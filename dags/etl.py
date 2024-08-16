@@ -4,6 +4,7 @@ from airflow.decorators import dag, task
 import pendulum
 import feedparser
 import numpy as np
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 #engine to connect to postgres
 #engine = sqlalchemy.create_engine('postgresql://airflow:airflow@postgres:5432')
@@ -11,6 +12,7 @@ import numpy as np
 feed = 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'
 
 
+@task
 def extract(feed):
     feed = feedparser.parse(feed)
     n = len(feed.entries)
@@ -23,6 +25,11 @@ def extract(feed):
         headlines['Published'] = feed.entries[i].published
     #export to csv
     headlines.to_csv('headlines.csv')
+    return 'headlines.csv'
+    
+@task
+def classify(path):
+    headlines = pd.read_csv(headlines)
     
         
 extract(feed)
