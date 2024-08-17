@@ -8,7 +8,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import torch
 
 #engine to connect to postgres
-#engine = sqlalchemy.create_engine('postgresql://airflow:airflow@postgres:5432')
+engine = sqlalchemy.create_engine('postgresql://airflow:airflow@postgres:5432')
 
 feed = 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'
 
@@ -30,30 +30,61 @@ def extract(feed):
     
 @task
 def classify(path):
+    #read in dataframe and get headlines
     df = pd.read_csv(path)
     headlines = df['Title']
+    
+    #load tokenizer and model
     tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
     model = AutoModelForSequenceClassification.from_pretrained('harshil0217/BERT_headline_classifier_v2')
     
+    #tokenize headlines
     headlines = headlines.tolist()
     inputs = tokenizer(headlines, truncation=True, padding=True, return_tensors='pt')
     
+    #input tokens into model
     with torch.no_grad():
         output = model(**inputs)
-        
+       
+    #get logits   
     logits = output.logits
     
+    #get label probabilities
     probs = torch.nn.functional.softmax(logits, dim=1)
     preds = np.where(probs >=0.5, 1, 0)
     
+    #get most likely classification
     index_to_sentiment = {0: 'negative', 1: 'neutral', 2: 'positive'}
     sentiment = [index_to_sentiment[np.argmax(pred)] for pred in preds]
     
+    #add sentiment to dataframe and export to csv
     df['Sentiment'] = sentiment
     df.to_csv('headlines.csv', index=False)
     
     return ('headlines.csv')
-   
+
+@task
+def load(path):
+    #load data into database
+    headlines = pd.read_csv(path)
+    table_name = 'headlines'
+    headlines.to_sql(table_name, con=engine, if_exists='append', index=False)
+    
+    #query to see if working
+    with engine.connect() as connection:
+        query = f"SELECT * FROM {table_name} LIMIT 3"
+        print("Data:", connection.execute(query).fetchall())
         
-path = extract(feed)
-path = classify(path)
+@dag(
+    dag_id='etl_pipeline',
+    start_date=pendulum.datetime(2024, 8, 17, tz='EST'),
+)
+def pipeline():
+    path = extract(feed)
+    path = classify(path)
+    load(path)
+    
+
+etl_pipeline = pipeline()
+
+        
