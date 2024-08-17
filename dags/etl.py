@@ -5,6 +5,7 @@ import pendulum
 import feedparser
 import numpy as np
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
 
 #engine to connect to postgres
 #engine = sqlalchemy.create_engine('postgresql://airflow:airflow@postgres:5432')
@@ -24,12 +25,35 @@ def extract(feed):
         headlines['Link'][i] = feed.entries[i].link
         headlines['Published'] = feed.entries[i].published
     #export to csv
-    headlines.to_csv('headlines.csv')
+    headlines.to_csv('headlines.csv', index=False)
     return 'headlines.csv'
     
 @task
 def classify(path):
-    headlines = pd.read_csv(headlines)
+    df = pd.read_csv(path)
+    headlines = df['Title']
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
+    model = AutoModelForSequenceClassification.from_pretrained('harshil0217/BERT_headline_classifier_v2')
     
+    headlines = headlines.tolist()
+    inputs = tokenizer(headlines, truncation=True, padding=True, return_tensors='pt')
+    
+    with torch.no_grad():
+        output = model(**inputs)
         
-extract(feed)
+    logits = output.logits
+    
+    probs = torch.nn.functional.softmax(logits, dim=1)
+    preds = np.where(probs >=0.5, 1, 0)
+    
+    index_to_sentiment = {0: 'negative', 1: 'neutral', 2: 'positive'}
+    sentiment = [index_to_sentiment[np.argmax(pred)] for pred in preds]
+    
+    df['Sentiment'] = sentiment
+    df.to_csv('headlines.csv', index=False)
+    
+    return ('headlines.csv')
+   
+        
+path = extract(feed)
+path = classify(path)
