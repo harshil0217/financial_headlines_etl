@@ -3108,3 +3108,20 @@ Traceback (most recent call last):
 ModuleNotFoundError: No module named 'feedparser'
 [2024-08-18T02:28:20.466+0000] {processor.py:755} WARNING - No viable dags retrieved from /opt/airflow/dags/etl.py
 [2024-08-18T02:28:20.522+0000] {processor.py:175} INFO - Processing /opt/airflow/dags/etl.py took 1.001 seconds
+[2024-08-18T02:29:17.810+0000] {processor.py:153} INFO - Started process (PID=58008) to work on /opt/airflow/dags/etl.py
+[2024-08-18T02:29:17.828+0000] {processor.py:743} INFO - Processing file /opt/airflow/dags/etl.py for tasks to queue
+[2024-08-18T02:29:17.832+0000] {logging_mixin.py:137} INFO - [2024-08-18T02:29:17.831+0000] {dagbag.py:538} INFO - Filling up the DagBag from /opt/airflow/dags/etl.py
+[2024-08-18T02:29:44.106+0000] {logging_mixin.py:137} INFO - [2024-08-18T02:29:43.840+0000] {dagbag.py:343} ERROR - Failed to import: /opt/airflow/dags/etl.py
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.7/site-packages/airflow/models/dagbag.py", line 339, in parse
+    loader.exec_module(new_module)
+  File "<frozen importlib._bootstrap_external>", line 728, in exec_module
+  File "<frozen importlib._bootstrap>", line 219, in _call_with_frames_removed
+  File "/opt/airflow/dags/etl.py", line 5, in <module>
+    import feedparser
+ModuleNotFoundError: No module named 'feedparser'
+[2024-08-18T02:29:44.108+0000] {processor.py:755} WARNING - No viable dags retrieved from /opt/airflow/dags/etl.py
+[2024-08-18T02:29:44.559+0000] {processor.py:175} INFO - Processing /opt/airflow/dags/etl.py took 27.541 seconds
+[2024-08-18T02:30:51.034+0000] {processor.py:153} INFO - Started process (PID=58113) to work on /opt/airflow/dags/etl.py
+[2024-08-18T02:30:51.064+0000] {processor.py:743} INFO - Processing file /opt/airflow/dags/etl.py for tasks to queue
+[2024-08-18T02:30:51.065+0000] {logging_mixin.py:137} INFO - [2024-08-18T02:30:51.065+0000] {dagbag.py:538} INFO - Filling up the DagBag from /opt/airflow/dags/etl.py
