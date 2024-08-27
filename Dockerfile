@@ -1,21 +1,22 @@
-FROM python:3.6.1-alpine
+FROM python:3.10.12-slim
 
-RUN apk update \
-  && apk add \
-    build-base \
+# Install necessary packages
+RUN apt-get update && apt-get install -y \
+    build-essential \
     postgresql \
-    postgresql-dev \
-    libpq
+    postgresql-client \
+    libpq-dev
 
+# Create application directory
 RUN mkdir /app
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
 
+# Copy and install Python dependencies
+COPY ./requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Set environment variables
 ENV PYTHONUNBUFFERED 1
 
-#for google cli
-RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && apt-get update -y && apt-get install google-cloud-cli -y
-    
-
+# Copy application code
 COPY . .

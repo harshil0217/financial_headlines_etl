@@ -6,14 +6,15 @@ import feedparser
 import numpy as np
 from dotenv import load_dotenv
 import os
-from google.cloud import language_v1
+import torch
+from transformers import AutoTokenizer, AutoModelForSequence
 
 
 feed = 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'
 
 load_dotenv()
 
-
+@task
 def extract(feed):
     feed = feedparser.parse(feed)
     n = len(feed.entries)
@@ -26,31 +27,35 @@ def extract(feed):
         headlines['Published'] = feed.entries[i].published
     #export to csv
     headlines.to_csv('headlines.csv', index=False)
-    return headlines
+    return ('headlines.csv')
     
 
 #classify headlines Title column in csv using google nlp
-def classify(headlines):
-    client = language_v1.LanguageServiceClient()
-    
-    categories = [None] * len(headlines)
-    
-    for i in range(len(headlines)):
-        document = language_v1.Document(content = headlines['Title'][i], type_ = language_v1.Document.Type.PLAIN_TEXT)
-        response = client.analyze_sentiment(request = {'document': document})
-        sentiment = response.document_sentiment.score
-        if sentiment > 0.66:
-            category = 'positive'
-        elif sentiment < -0.66:
-            category = 'negative'
-        else:
-            category = 'neutral'
-        
-        categories[i] = category
-        
-    headlines['Sentiment'] = categories
-        
-    return headlines
+@task
+def classify(path):
+    df = pd.read_csv(path)
+    headlines = df['Title']
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
+    model = AutoModelForSequenceClassification.from_pretrained('harshil0217/BERT_headline_classifier_v2')
+
+    headlines = headlines.tolist()
+    inputs = tokenizer(headlines, truncation=True, padding=True, return_tensors='pt')
+
+    with torch.no_grad():
+        output = model(**inputs)
+
+    logits = output.logits
+
+    probs = torch.nn.functional.softmax(logits, dim=1)
+    preds = np.where(probs >=0.5, 1, 0)
+
+    index_to_sentiment = {0: 'negative', 1: 'neutral', 2: 'positive'}
+    sentiment = [index_to_sentiment[np.argmax(pred)] for pred in preds]
+
+    df['Sentiment'] = sentiment
+    df.to_csv('headlines.csv', index=False)
+
+    return ('headlines.csv')
         
     
     
@@ -59,8 +64,9 @@ def classify(headlines):
     
 
 @task
-def load(headlines):
+def load(path):
     #load data into database
+    headlines = pd.read_csv(path)
     engine = sqlalchemy.create_engine(os.getenv('AIRFLOW__DATABASE__SQL_ALCHEMY_CONN'))
     headlines.to_sql('headlines', con = engine, if_exists='replace', index=False)
     
@@ -78,9 +84,7 @@ def load(headlines):
     catchup=False
 )
 def pipeline():
-    headlines = extract(feed)
-    headlines = classify(headlines)
-    load(headlines)
+    load(classify(extract(feed)))
     
 
 etl_pipeline = pipeline()
