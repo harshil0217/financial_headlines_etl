@@ -4,16 +4,16 @@ from airflow.decorators import dag, task
 import pendulum
 import feedparser
 import numpy as np
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-import torch
+from dotenv import load_dotenv
+import os
+from google.cloud import language_v1
 
-#engine to connect to postgres
-engine = sqlalchemy.create_engine('postgresql://airflow:airflow@postgres:5432')
 
 feed = 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114'
 
+load_dotenv()
 
-@task
+
 def extract(feed):
     feed = feedparser.parse(feed)
     n = len(feed.entries)
@@ -26,63 +26,61 @@ def extract(feed):
         headlines['Published'] = feed.entries[i].published
     #export to csv
     headlines.to_csv('headlines.csv', index=False)
-    return 'headlines.csv'
+    return headlines
     
-@task
-def classify(path):
-    #read in dataframe and get headlines
-    df = pd.read_csv(path)
-    headlines = df['Title']
+
+#classify headlines Title column in csv using google nlp
+def classify(headlines):
+    client = language_v1.LanguageServiceClient()
     
-    #load tokenizer and model
-    tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
-    model = AutoModelForSequenceClassification.from_pretrained('harshil0217/BERT_headline_classifier_v2')
+    categories = [None] * len(headlines)
     
-    #tokenize headlines
-    headlines = headlines.tolist()
-    inputs = tokenizer(headlines, truncation=True, padding=True, return_tensors='pt')
+    for i in range(len(headlines)):
+        document = language_v1.Document(content = headlines['Title'][i], type_ = language_v1.Document.Type.PLAIN_TEXT)
+        response = client.analyze_sentiment(request = {'document': document})
+        sentiment = response.document_sentiment.score
+        if sentiment > 0.66:
+            category = 'positive'
+        elif sentiment < -0.66:
+            category = 'negative'
+        else:
+            category = 'neutral'
+        
+        categories[i] = category
+        
+    headlines['Sentiment'] = categories
+        
+    return headlines
+        
     
-    #input tokens into model
-    with torch.no_grad():
-        output = model(**inputs)
-       
-    #get logits   
-    logits = output.logits
     
-    #get label probabilities
-    probs = torch.nn.functional.softmax(logits, dim=1)
-    preds = np.where(probs >=0.5, 1, 0)
+        
     
-    #get most likely classification
-    index_to_sentiment = {0: 'negative', 1: 'neutral', 2: 'positive'}
-    sentiment = [index_to_sentiment[np.argmax(pred)] for pred in preds]
     
-    #add sentiment to dataframe and export to csv
-    df['Sentiment'] = sentiment
-    df.to_csv('headlines.csv', index=False)
-    
-    return ('headlines.csv')
 
 @task
-def load(path):
+def load(headlines):
     #load data into database
-    headlines = pd.read_csv(path)
-    table_name = 'headlines'
-    headlines.to_sql(table_name, con=engine, if_exists='append', index=False)
+    engine = sqlalchemy.create_engine(os.getenv('AIRFLOW__DATABASE__SQL_ALCHEMY_CONN'))
+    headlines.to_sql('headlines', con = engine, if_exists='replace', index=False)
     
-    #query to see if working
+    #test to see if working
     with engine.connect() as connection:
-        query = f"SELECT * FROM {table_name} LIMIT 3"
-        print("Data:", connection.execute(query).fetchall())
+        query = "SELECT * FROM headlines LIMIT 3"
+        print(connection.execute(query).fetchall())
         
+    
+
 @dag(
     dag_id='etl_pipeline',
     start_date=pendulum.datetime(2024, 8, 17, tz='EST'),
+    schedule_interval='@daily',
+    catchup=False
 )
 def pipeline():
-    path = extract(feed)
-    path = classify(path)
-    load(path)
+    headlines = extract(feed)
+    headlines = classify(headlines)
+    load(headlines)
     
 
 etl_pipeline = pipeline()
